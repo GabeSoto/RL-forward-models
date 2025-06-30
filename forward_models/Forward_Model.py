@@ -23,12 +23,14 @@ class Normalizer(tf.keras.Model):
         """
         Normalize the inputs.
         """
+        inputs = tf.cast(inputs, dtype=self.loc.dtype)
         return (inputs - self.loc) / self.scale
 
     def invert(self, inputs):
         """
         De-normalize the inputs.
         """
+        inputs = tf.cast(inputs, dtype=self.loc.dtype)
         return (inputs * self.scale) + self.loc
 
 
@@ -95,7 +97,11 @@ class ForwardModel(tf.keras.Model):
             reset_state: Boolean to reset the hidden state of the RNN.
         """
         inputs = tf.concat([states, actions], axis=-1)
-        hidden = self.dense_embedding(inputs)
+        hidden = tf.cast(self.dense_embedding(inputs), dtype=tf.float32)
+        #self.dense_embedding(inputs)
+        # print("states shape:", states.shape)
+        # print("actions shape:", actions.shape)
+        # print("Input shape:", inputs.shape)
 
         # compute an initial state for the RNN
         if self.hidden_state is None or self.cell_state is None or reset_state:

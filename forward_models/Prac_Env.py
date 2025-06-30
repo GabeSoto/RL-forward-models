@@ -7,15 +7,23 @@ import numpy as np
 from enum import Enum
 import random
 from gym.utils import seeding
+import serial
+import time
 
+'''Added'''
+class DummySerial:
+    def write(self, data):
+        print(f"[DummySerial] Would send: {data.decode().strip()}")
 
+    def close(self):
+        print("[DummySerial] Closed")
+''''''
 
 class prac_env_v0(gym.Env):
-    def __init__(self):
+    def __init__(self, test_mode=False):
         super(prac_env_v0, self).__init__()
 
-        #How many possible actions
-        self.action_space = spaces.Discrete(26)
+        self.test_mode = test_mode
 
         #Shape of observation space
         self.observation_space = spaces.Box( low = -375.0, high = 375.0,
@@ -25,23 +33,24 @@ class prac_env_v0(gym.Env):
         self.action_list = [0.0001, 0.0003, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100,
                             -0.0001, -0.0003, -0.001, -0.003, -0.01, -0.03, -0.1, -0.3,  -1, -3, -10, -30, -100]
 
-        #Action lists that are meant to be used for a space.MultiDisrete action space
-        self.action_list1 = [100, 10, -10, -100]
-        self.action_list2 = [30, 3, -3, -30]
-        self.action_list3 = [10, 1, -1, -10]
-        self.action_list4 = [3, 0.3, -0.3, -3]
-        self.action_list5 = [1, 0.1, -0.1, -1]
-        self.action_list6 = [0.3, 0.03, -0.03, -0.3]
-        self.action_list7 = [0.1, 0.01, -0.01, -0.1]
-        self.action_list8 = [0.03, 0.003, -0.003, -0.03]
-        self.action_list9 = [0.01, 0.001, -0.001, -0.01]
-        self.action_list10 = [0.003, 0.0003, -0.0003, -0.003]
-        self.action_list11 = [0.001, 0.0001, -0.0001, -0.001]
-
         #Action space, how the environment will interpret the actions
         self.action_space = spaces.Discrete(len(self.action_list))
         print(f"Debug: {self.action_space}")
         
+        '''Added'''
+        # Set up serial port or dummy serial
+        if not self.test_mode:
+            try:
+                self.ser = serial.Serial('/dev/ttyACM0', 9600, timeout=1)
+                time.sleep(2)  # Allow time for Arduino boot-up
+                print("[Serial] Connection to hardware established.")
+            except Exception as e:
+                print("[Serial] Failed to connect:", e)
+                self.ser = None
+        else:
+            self.ser = DummySerial()
+            print("[Test Mode] Using DummySerial")
+        ''''''
 
     def seed(self, seed=None):
         
@@ -88,6 +97,18 @@ class prac_env_v0(gym.Env):
         #Resulting state due to action
         next_state = current_state + direction
 
+        '''Added'''
+        # If in test mode, use dummy serial
+        # Send command to hardware or dummy
+        if self.ser:
+            try:
+                command = f"{direction:.6f}\n"
+                self.ser.write(command.encode('utf-8'))
+                print(f"[Action] Sent to hardware: {command.strip()}")
+            except Exception as e:
+                print("[Serial Error]", e)
+        ''''''
+
         #reward system
         if np.abs(next_state) > 374:
             reward = -10
@@ -115,4 +136,9 @@ class prac_env_v0(gym.Env):
     
     #close any open resources used by environment
     def close(self):
-        pass
+        #pass
+        '''Added'''
+        if self.ser:
+            self.ser.close()
+            print("[Serial] Connection closed.")
+            ''''''

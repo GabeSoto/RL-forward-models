@@ -32,7 +32,7 @@ class Params:
     learning_rate = attr.ib(default=5e-1)
     batch_size = attr.ib(default=1024)
     grad_clipping = attr.ib(default=1.0)
-    epochs = attr.ib(default=100)
+    epochs = attr.ib(default=10)
     max_episode_steps = attr.ib(default=200)
     episodes_train = attr.ib(default=1000)
     episodes_eval = attr.ib(default=10)
@@ -131,14 +131,17 @@ def main():
 
     # create normalizers for the features and targets
     state_normalizer = Normalizer(
-        loc=states_train.mean(axis=(0, 1)),
-        scale=states_train.std(axis=(0, 1)))
+        loc=states_train.mean(axis=(0, 1)).astype(np.float32),
+    scale=states_train.std(axis=(0, 1)).astype(np.float32))
     delta_normalizer = Normalizer(
-        loc=deltas_train.mean(axis=(0, 1)),
-        scale=deltas_train.std(axis=(0, 1)))
+        loc=states_train.mean(axis=(0, 1)).astype(np.float32),
+    scale=states_train.std(axis=(0, 1)).astype(np.float32))
     action_normalizer = Normalizer(
-        loc=actions_train.mean(axis=(0, 1)),
-        scale=actions_train.std(axis=(0, 1)))
+        loc=states_train.mean(axis=(0, 1)).astype(np.float32),
+    scale=states_train.std(axis=(0, 1)).astype(np.float32))
+
+    print("State normalizer dtype:", state_normalizer.loc.numpy().dtype)
+    print("Action normalizer dtype:", action_normalizer.loc.numpy().dtype)
 
     # create a forward model
     model = ForwardModel(output_units=env.observation_space.shape[-1])
