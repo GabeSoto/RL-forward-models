@@ -40,7 +40,7 @@ class Rollout:
         """
 
         observation_size = self.env.observation_space.shape[-1]
-        action_size = self.env.action_space.n #Changed from self.env.action_space.shape[-1] 
+        action_size = self.env.action_space.n
 
         states = np.zeros(
             shape=(episodes, self.max_episode_steps, observation_size),

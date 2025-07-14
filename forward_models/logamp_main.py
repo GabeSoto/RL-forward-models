@@ -29,12 +29,12 @@ class Params:
         episodes_eval: Number of evaluation episodes to sample.
     """
 
-    learning_rate = attr.ib(default=5e-1)
-    batch_size = attr.ib(default=1024)
+    learning_rate = attr.ib(default=1e-1)#5e-1
+    batch_size = attr.ib(default=256)#1024
     grad_clipping = attr.ib(default=1.0)
-    epochs = attr.ib(default=10)
+    epochs = attr.ib(default=15)#200
     max_episode_steps = attr.ib(default=200)
-    episodes_train = attr.ib(default=1000)
+    episodes_train = attr.ib(default=250)#1000
     episodes_eval = attr.ib(default=10)
 
 
@@ -87,7 +87,6 @@ def main():
 #python .\logamp_main.py --job-dir .\logs\
 
     # enable TF Eager
-    '''---------------------What does TF Eager do???-------------------'''
     tf.enable_eager_execution()
 
     # create the environment
@@ -119,6 +118,8 @@ def main():
     deltas_train = next_states_train - states_train
     deltas_eval = next_states_eval - states_eval
 
+    print("Creating datasets...")
+
     # create datasets for training and evaluation
     dataset_train = create_dataset(
         (states_train, actions_train, deltas_train, weights_train),
@@ -129,19 +130,24 @@ def main():
         batch_size=params.batch_size,
         shuffle=True)
 
+    print("Datasets created.")
+
     # create normalizers for the features and targets
+    epsilon = 1e-6
     state_normalizer = Normalizer(
         loc=states_train.mean(axis=(0, 1)).astype(np.float32),
-    scale=states_train.std(axis=(0, 1)).astype(np.float32))
+    scale=states_train.std(axis=(0, 1)) + epsilon)
     delta_normalizer = Normalizer(
-        loc=states_train.mean(axis=(0, 1)).astype(np.float32),
-    scale=states_train.std(axis=(0, 1)).astype(np.float32))
-    action_normalizer = Normalizer(
-        loc=states_train.mean(axis=(0, 1)).astype(np.float32),
-    scale=states_train.std(axis=(0, 1)).astype(np.float32))
+        loc=deltas_train.mean(axis=(0, 1)).astype(np.float32),
+    scale=deltas_train.std(axis=(0, 1)) + epsilon)
 
-    print("State normalizer dtype:", state_normalizer.loc.numpy().dtype)
-    print("Action normalizer dtype:", action_normalizer.loc.numpy().dtype)
+    action_floats_train = np.take(env.action_list, actions_train.astype(np.int32))
+    action_normalizer = Normalizer(
+        loc=np.mean(action_floats_train).astype(np.float32),
+    scale=(np.std(action_floats_train) + epsilon).astype(np.float32))
+
+    #print("State normalizer dtype:", state_normalizer.loc.numpy().dtype)
+    #print("Action normalizer dtype:", action_normalizer.loc.numpy().dtype)
 
     # create a forward model
     model = ForwardModel(output_units=env.observation_space.shape[-1])
@@ -161,7 +167,7 @@ def main():
         model=model,
         optimizer=optimizer,
         global_step=global_step)
-
+    
     # restore a checkpoint if it exists
     checkpoint_path = tf.train.latest_checkpoint(args.job_dir)
     if checkpoint_path is not None:
@@ -172,6 +178,8 @@ def main():
         logdir=args.job_dir, max_queue=1, flush_millis=1000)
     summary_writer.set_as_default()
 
+    print("Action normalizer scale:", action_normalizer.scale.numpy())
+
     # iterate for some number of epochs over the datasets
     for epoch in range(params.epochs):
 
@@ -180,7 +188,14 @@ def main():
             # normalize features and targets
             states_norm = state_normalizer(states)
             deltas_norm = delta_normalizer(deltas)
-            actions_norm = action_normalizer(actions)
+            # Convert one-hot actions to index form
+            action_indices = tf.argmax(actions, axis=-1, output_type=tf.int32)
+
+            # Map indices to float values via env.action_list
+            action_floats = tf.gather(tf.constant(env.action_list, dtype=tf.float32), action_indices)
+
+            # Normalize and expand dims
+            actions_norm = tf.expand_dims(action_normalizer(action_floats), axis=-1)
 
             # compute a forward pass and loss inside with a gradient tape so
             # the trainable variables are watched for gradient computation
@@ -199,13 +214,15 @@ def main():
                     labels=deltas_norm,
                     weights=weights)
 
+                print("Loss value:", loss.numpy())
+                #print("Any NaN in inputs:", np.isnan(states.numpy()).any())
+
             # compute gradients
             grads = tape.gradient(loss, model.trainable_variables)
 
             # clip the gradients by their global norm
             # returns gradients and global norm before clipping
-            grads, grad_norm = tf.clip_by_global_norm(grads,
-                                                      params.grad_clipping)
+            grads, grad_norm = tf.clip_by_global_norm(grads, params.grad_clipping)
 
             # update the model
             grads_and_vars = zip(grads, model.trainable_variables)
@@ -225,17 +242,22 @@ def main():
             # normalize features and targets
             states_norm = state_normalizer(states)
             deltas_norm = delta_normalizer(deltas)
-            actions_norm = action_normalizer(actions)
+            # Convert one-hot actions to index form
+            action_indices = tf.argmax(actions, axis=-1, output_type=tf.int32)
+
+            # Map indices to float values via env.action_list
+            action_floats = tf.gather(tf.constant(env.action_list, dtype=tf.float32), action_indices)
+
+            # Normalize and expand dims
+            actions_norm = tf.expand_dims(action_normalizer(action_floats), axis=-1)
 
             # compute a forward pass ensuring the RNN state is reset
-            deltas_norm_pred = model(
-                states_norm, actions_norm, training=False, reset_state=True)
+            deltas_norm_pred = model(states_norm, actions_norm, training=False, reset_state=True)
 
             # compute the evaluation loss
-            loss = tf.losses.mean_squared_error(
-                predictions=deltas_norm_pred,
-                labels=deltas_norm,
-                weights=weights)
+            loss = tf.losses.mean_squared_error(predictions=deltas_norm_pred,
+                                                labels=deltas_norm,
+                                                weights=weights)
 
             # log evaluation summaries
             with tf.contrib.summary.always_record_summaries():

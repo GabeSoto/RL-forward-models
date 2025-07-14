@@ -96,12 +96,13 @@ class ForwardModel(tf.keras.Model):
                       Used for toggling dropout.
             reset_state: Boolean to reset the hidden state of the RNN.
         """
+        if len(states.shape) == 2:
+            states = tf.expand_dims(states, axis=1)
+        if len(actions.shape) == 2:
+            actions = tf.expand_dims(actions, axis=1)
+
         inputs = tf.concat([states, actions], axis=-1)
         hidden = tf.cast(self.dense_embedding(inputs), dtype=tf.float32)
-        #self.dense_embedding(inputs)
-        # print("states shape:", states.shape)
-        # print("actions shape:", actions.shape)
-        # print("Input shape:", inputs.shape)
 
         # compute an initial state for the RNN
         if self.hidden_state is None or self.cell_state is None or reset_state:

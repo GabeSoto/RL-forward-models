@@ -3,6 +3,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+#This file is not really important at the moment
 # from gym.envs.classic_control import PendulumEnv
 from Prac_Env import prac_env_v0
 

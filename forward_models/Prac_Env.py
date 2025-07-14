@@ -10,24 +10,35 @@ from gym.utils import seeding
 import serial
 import time
 
-'''Added'''
 class DummySerial:
     def write(self, data):
         print(f"[DummySerial] Would send: {data.decode().strip()}")
 
     def close(self):
         print("[DummySerial] Closed")
-''''''
 
 class prac_env_v0(gym.Env):
     def __init__(self, test_mode=False):
         super(prac_env_v0, self).__init__()
 
         self.test_mode = test_mode
+        self.prev_action = 0.0
+        #Observation: [current_state, target_current, delta _to_target, prev_action]
+        self.current_state_min = -375.0
+        self.target_current_min = -275.0
+        self.delta_to_target_min = np.abs(self.current_state_min - self.target_current_min)
+        self.prev_action_min = -100
+        self.low = np.array([self.current_state_min, self.target_current_min,
+                              self.delta_to_target_min, self.prev_action_min], dtype=np.float32)
+        self.current_state_max = 375.0
+        self.target_current_max = 275.0
+        self.delta_to_target_max = np.abs(self.current_state_max - self.target_current_max)
+        self.prev_action_max = -100
+        self.high = np.array([self.current_state_max, self.target_current_max,
+                              self.delta_to_target_max, self.prev_action_max], dtype=np.float32)
 
         #Shape of observation space
-        self.observation_space = spaces.Box( low = -375.0, high = 375.0,
-                                             shape = (1,), dtype = float) #randomly chose the bounds of sys
+        self.observation_space = spaces.Box( low = self.low, high = self.high, dtype = float)
         
         #Possible actions
         self.action_list = [0.0001, 0.0003, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100,
@@ -35,9 +46,8 @@ class prac_env_v0(gym.Env):
 
         #Action space, how the environment will interpret the actions
         self.action_space = spaces.Discrete(len(self.action_list))
-        print(f"Debug: {self.action_space}")
+        # print(f"Debug: {self.action_space}")
         
-        '''Added'''
         # Set up serial port or dummy serial
         if not self.test_mode:
             try:
@@ -50,7 +60,6 @@ class prac_env_v0(gym.Env):
         else:
             self.ser = DummySerial()
             print("[Test Mode] Using DummySerial")
-        ''''''
 
     def seed(self, seed=None):
         
@@ -72,10 +81,12 @@ class prac_env_v0(gym.Env):
         #Todo: randomize self.current
         #Reseting reward
         self.cumulative_reward = 0
+        self.prev_action = 0.0
 
         print("=================RESET!!==================")
+        obs  = np.array([self.state, self.current, self.state-self.current,self.prev_action],dtype = np.float32)
 
-        return self.state
+        return obs
     
     #time step which contains most of the logic used in the environment
     #It accepts an action, computes the state of environment after applying that action and returns the tuple (self.state, reward)
@@ -97,7 +108,6 @@ class prac_env_v0(gym.Env):
         #Resulting state due to action
         next_state = current_state + direction
 
-        '''Added'''
         # If in test mode, use dummy serial
         # Send command to hardware or dummy
         if self.ser:
@@ -107,28 +117,40 @@ class prac_env_v0(gym.Env):
                 print(f"[Action] Sent to hardware: {command.strip()}")
             except Exception as e:
                 print("[Serial Error]", e)
-        ''''''
 
         #reward system
         if np.abs(next_state) > 374:
-            reward = -10
+            self.cumulative_reward = -10
             done = True
 
         if np.abs(next_state-current) > np.abs(current_state-current):
-            reward = -0.001
+            self.cumulative_reward = -1
+
+        if np.abs(next_state-current) < np.abs(current_state-current):
+            self.cumulative_reward = 1
+
+        if current == next_state:
+            self.state = next_state
+            self.prev_action = direction
+            self.cumulative_reward = 10
+            done = True
 
         if not done:
             self.state = next_state
-
+            self.prev_action = direction
+            print(f"[Not Done] Current state: {self.state}, Action: {direction}")
         #Update rewards
         reward = self.cumulative_reward + reward
+        print(f"[Reward] Cumulative reward: {reward}")
         #Done is when you reach the target Current (in our case)
 
+        obs = np.array([self.state, self.current, self.state-self.current, self.prev_action], dtype=np.float32)
+
         if done:
-            print(self.state)
+            print(f"[Done] Final state: {self.state}")
             print("---------------------DONE------------------------")
 
-        return next_state, reward, done, _
+        return obs, reward, done, _
 
     #Inteface output 
     def render(self, mode = 'human'):
@@ -137,8 +159,6 @@ class prac_env_v0(gym.Env):
     #close any open resources used by environment
     def close(self):
         #pass
-        '''Added'''
         if self.ser:
             self.ser.close()
             print("[Serial] Connection closed.")
-            ''''''

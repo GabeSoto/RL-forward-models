@@ -5,7 +5,7 @@
 *__pycache__
 
 /forward_models/logs
-
+/forward_models/tensorboard_logs
 .venv
 *.pyc
 
